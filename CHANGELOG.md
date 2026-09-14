@@ -16,7 +16,6 @@ Dynamic Island puts music and everyday controls on its home surface with configu
 - App Switcher can show only windows on the display under the pointer, staying closed on empty displays. Thanks to @EugeneCarldotme.
 - Scratchpad tabs can be created with Command-T and closed with Command-W, keeping confirmation for notes with text. Thanks to @Borisserz.
 - Screenshot gains custom editor shortcuts and optional keyboard focus for previews. Thanks to @santi-ug.
-- Window Layout can cycle a repeated Left or Right through half, two thirds and one third on the same display, instead of moving the window to the next display.
 
 ### Changed
 - The App Switcher opens more smoothly when many windows are open. Thanks to @bebricoOOOOOOf.
