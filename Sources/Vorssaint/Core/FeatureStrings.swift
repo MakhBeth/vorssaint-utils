@@ -1293,7 +1293,7 @@ struct WindowLayoutFeatureStrings {
         windowGap: "Window gap",
         screenGap: "Screen gap",
         sideRepeatCycle: "Repeat Left or Right to cycle sizes",
-        sideRepeatCycleCaption: "Half, then two thirds, then one third on the same display. Off, the repeat moves the window to the next display.",
+        sideRepeatCycleCaption: "Half, then two thirds, then one third on the same display. Off, the repeat moves the window to the display on that side, if available.",
         gapNone: "None",
         gapTiny: "Tiny",
         gapSmall: "Small",

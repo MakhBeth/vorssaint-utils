@@ -260,15 +260,6 @@ enum WindowLayoutAction: String, CaseIterable, Identifiable {
 
 /// The configurable spacing around snapped windows (issue #1068). Values are
 /// in pixels, offering standard spacing presets (0 to 128 px).
-/// Whether a repeated Left or Right cycles the window through half, two thirds
-/// and one third of the same display (the way Rectangle does) instead of
-/// pushing it onto the display beside it.
-enum WindowLayoutSideRepeat {
-    static var cyclesThirds: Bool {
-        UserDefaults.standard.bool(forKey: DefaultsKey.windowLayoutSideRepeatCyclesThirds)
-    }
-}
-
 enum WindowLayoutGaps {
     static let presets: [Int] = [0, 8, 16, 32, 64, 128]
 
@@ -278,6 +269,15 @@ enum WindowLayoutGaps {
 
     static var screenGap: CGFloat {
         CGFloat(UserDefaults.standard.integer(forKey: DefaultsKey.windowLayoutScreenGap))
+    }
+}
+
+/// Whether a repeated Left or Right cycles the window through half, two thirds
+/// and one third of the same display instead of
+/// pushing it onto the display beside it.
+enum WindowLayoutSideRepeat {
+    static var cyclesThirds: Bool {
+        UserDefaults.standard.bool(forKey: DefaultsKey.windowLayoutSideRepeatCyclesThirds)
     }
 }
 
@@ -301,7 +301,7 @@ enum WindowLayoutGeometry {
         return action
     }
 
-    /// The Rectangle-style size cycle for a repeated side action: half, then
+    /// The window size cycle for a repeated side action: half, then
     /// two thirds, then one third, then back to the half. Only sizes reached
     /// from the same side count, so a left after a right third starts over.
     static func sideCycleAction(for action: WindowLayoutAction,
