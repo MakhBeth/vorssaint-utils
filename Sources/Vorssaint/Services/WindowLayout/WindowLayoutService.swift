@@ -37,9 +37,9 @@ final class WindowLayoutService: ObservableObject {
 
     private var frameHistory = WindowLayoutHistory()
     private var lastActions: [WindowLayoutWindowKey: WindowLayoutAction] = [:]
-    // The frame each window actually settled at after its last placement,
-    // minimum sizes included: the side size cycle only advances from there.
-    private var settledFrames: [WindowLayoutWindowKey: WindowLayoutFrame] = [:]
+    // Where each window's last placement left it, as requested and as read
+    // back, minimum sizes included: the side size cycle only advances from there.
+    private var settledFrames: [WindowLayoutWindowKey: WindowLayoutSettledFrame] = [:]
     private var hotKeyRefs: [WindowLayoutAction: EventHotKeyRef] = [:]
     private var eventHandler: EventHandlerRef?
     private var registeredShortcuts: [WindowLayoutAction: GlobalShortcut] = [:]
@@ -308,7 +308,7 @@ final class WindowLayoutService: ObservableObject {
                                   visibleFrame: visibleFrame)
         if placement.frame == target.frame {
             lastActions[target.key] = effectiveAction
-            settledFrames[target.key] = target.frame
+            settledFrames[target.key] = WindowLayoutSettledFrame(requested: target.frame, actual: target.frame)
             return finish(.success(restored: false))
         }
         frameHistory.record(historyFrame ?? target.frame, for: target.key)
@@ -492,7 +492,17 @@ final class WindowLayoutService: ObservableObject {
         settledFrames.removeValue(forKey: windowKey)
         if attempt(frame, targetRect: targetRect, action: action, on: window) {
             assistiveModeSuspensions.removeValue(forKey: windowID)?.resume()
-            settledFrames[windowKey] = self.frame(of: window) ?? frame
+            let actual = self.frame(of: window) ?? frame
+            settledFrames[windowKey] = WindowLayoutSettledFrame(requested: frame, actual: actual)
+            if !actual.isClose(to: frame, tolerance: frameTolerance) {
+                // The lenient acceptance may have read a frame the app has not
+                // committed yet (issue #334); look again once it has, so a
+                // late, clamped resize still counts as the settled frame.
+                scheduleSettledFrameRefresh(for: window,
+                                            windowKey: windowKey,
+                                            targetRect: targetRect,
+                                            action: action)
+            }
             return true
         }
 
@@ -512,6 +522,29 @@ final class WindowLayoutService: ObservableObject {
                                      resultGeneration: resultGeneration + 1),
                        attempt: 0)
         return true
+    }
+
+    /// Observation only: re-reads the frame once the app has had time to
+    /// commit a late resize and records it as the settled frame. Nothing is
+    /// re-applied or restored, unlike the settle path, and the next placement
+    /// cancels it through cancelSettle like any settle timer.
+    private func scheduleSettledFrameRefresh(for window: AXUIElement,
+                                             windowKey: WindowLayoutWindowKey,
+                                             targetRect: NSRect,
+                                             action: WindowLayoutAction) {
+        let windowID = windowKey.windowID
+        let timer = Timer(timeInterval: 0.3, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.settleTimers[windowID] = nil
+            guard let settled = self.settledFrames[windowKey],
+                  let actual = self.frame(of: window),
+                  actual.isClose(to: settled.requested, tolerance: self.frameTolerance)
+                    || self.accepted(actual: actual, targetRect: targetRect, action: action)
+            else { return }
+            self.settledFrames[windowKey] = WindowLayoutSettledFrame(requested: settled.requested, actual: actual)
+        }
+        settleTimers[windowID] = timer
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     private func scheduleSettle(_ context: SettleContext, attempt: Int) {
@@ -571,7 +604,8 @@ final class WindowLayoutService: ObservableObject {
     private func concludeSettle(_ context: SettleContext, success: Bool) {
         assistiveModeSuspensions.removeValue(forKey: context.windowID)?.resume()
         if success {
-            settledFrames[context.windowKey] = frame(of: context.window) ?? context.frame
+            settledFrames[context.windowKey] = WindowLayoutSettledFrame(requested: context.frame,
+                                                                        actual: frame(of: context.window) ?? context.frame)
             return
         }
         settledFrames.removeValue(forKey: context.windowKey)

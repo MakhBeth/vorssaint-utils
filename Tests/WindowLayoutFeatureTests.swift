@@ -781,18 +781,32 @@ enum WindowLayoutFeatureTests {
                 && sideRepeatServiceSource.contains("settledFrames[context.windowKey] = ")
                 && sideRepeatServiceSource.contains("settledFrames.removeValue(forKey: context.windowKey)"),
                "window layout service records the settled frame after immediate and delayed placements and drops it on a refusal")
+        let sideRepeatImmediate = sideRepeatServiceSource.components(separatedBy: "settledFrames[windowKey] = ")
+            .dropFirst().first?.components(separatedBy: "return true").first ?? ""
+        suite.expect(sideRepeatImmediate.contains("scheduleSettledFrameRefresh(")
+                && sideRepeatServiceSource.contains("private func scheduleSettledFrameRefresh("),
+               "window layout service re-reads a leniently accepted frame later so a late, clamped resize still counts as settled")
         let settledHalf = WindowLayoutFrame(origin: CGPoint(x: 0, y: 40), size: CGSize(width: 720, height: 860))
         let widenedHalf = WindowLayoutFrame(origin: settledHalf.origin, size: CGSize(width: 1080, height: 860))
         let nudgedHalf = WindowLayoutFrame(origin: CGPoint(x: 2, y: 41), size: CGSize(width: 719, height: 858))
         let clampedHalf = WindowLayoutFrame(origin: settledHalf.origin, size: CGSize(width: 900, height: 860))
-        suite.expect(WindowLayoutGeometry.sideCycleContinues(current: widenedHalf, settled: settledHalf, tolerance: 4) == false,
+        let settledTwoThirds = WindowLayoutFrame(origin: settledHalf.origin, size: CGSize(width: 960, height: 860))
+        let landedHalf = WindowLayoutSettledFrame(requested: settledHalf, actual: settledHalf)
+        let lateTwoThirds = WindowLayoutSettledFrame(requested: settledTwoThirds, actual: settledHalf)
+        suite.expect(WindowLayoutGeometry.sideCycleContinues(current: widenedHalf, settled: landedHalf, tolerance: 4) == false,
                "window layout side cycle restarts after the half was widened by hand")
-        suite.expect(WindowLayoutGeometry.sideCycleContinues(current: settledHalf, settled: settledHalf, tolerance: 4)
-                && WindowLayoutGeometry.sideCycleContinues(current: nudgedHalf, settled: settledHalf, tolerance: 4),
+        suite.expect(WindowLayoutGeometry.sideCycleContinues(current: settledHalf, settled: landedHalf, tolerance: 4)
+                && WindowLayoutGeometry.sideCycleContinues(current: nudgedHalf, settled: landedHalf, tolerance: 4),
                "window layout side cycle continues from a window still at the settled frame, within tolerance")
-        suite.expect(WindowLayoutGeometry.sideCycleContinues(current: clampedHalf, settled: clampedHalf, tolerance: 4)
+        suite.expect(WindowLayoutGeometry.sideCycleContinues(current: clampedHalf,
+                                                             settled: WindowLayoutSettledFrame(requested: settledHalf, actual: clampedHalf),
+                                                             tolerance: 4)
                 && WindowLayoutGeometry.sideCycleContinues(current: settledHalf, settled: nil, tolerance: 4) == false,
                "window layout side cycle honours an app minimum size once settled and never starts without a settled frame")
+        suite.expect(WindowLayoutGeometry.sideCycleContinues(current: settledTwoThirds, settled: lateTwoThirds, tolerance: 4)
+                && WindowLayoutGeometry.sideCycleContinues(current: settledHalf, settled: lateTwoThirds, tolerance: 4)
+                && WindowLayoutGeometry.sideCycleContinues(current: widenedHalf, settled: lateTwoThirds, tolerance: 4) == false,
+               "window layout side cycle survives an app that commits the two thirds after it was read back at the half")
         let leftHalfRect = WindowLayoutGeometry.rect(for: .leftHalf, current: currentWindow, visibleFrame: visibleFrame)
         suite.expect(WindowLayoutGeometry.accepts(actualRect: leftHalfRect.offsetBy(dx: 200, dy: 0),
                                             targetRect: leftHalfRect,

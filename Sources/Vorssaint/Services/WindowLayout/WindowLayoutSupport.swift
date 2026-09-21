@@ -320,15 +320,17 @@ enum WindowLayoutGeometry {
         return cycle[(index + 1) % cycle.count]
     }
 
-    /// Whether the size cycle may advance: only from a window still sitting at
-    /// the frame the previous step actually settled at. That frame already
-    /// reflects an app's minimum size, so a clamped half still cycles, while a
-    /// window widened or dragged by hand in between starts over at the half.
+    /// Whether the size cycle may advance: only from a window still sitting
+    /// where the previous step left it, either the frame it was read back at
+    /// (an app's minimum size included, so a clamped half still cycles) or the
+    /// frame it asked for (an app that commits its resize late is read back at
+    /// the old frame). A window widened or dragged by hand matches neither.
     static func sideCycleContinues(current: WindowLayoutFrame,
-                                   settled: WindowLayoutFrame?,
+                                   settled: WindowLayoutSettledFrame?,
                                    tolerance: CGFloat) -> Bool {
         guard let settled else { return false }
-        return current.isClose(to: settled, tolerance: tolerance)
+        return current.isClose(to: settled.actual, tolerance: tolerance)
+            || current.isClose(to: settled.requested, tolerance: tolerance)
     }
 
     /// Where a repeated side action goes: asking for the same side again keeps
@@ -839,6 +841,13 @@ struct WindowLayoutFrame: Equatable {
             && abs(size.width - other.size.width) <= tolerance
             && abs(size.height - other.size.height) <= tolerance
     }
+}
+
+/// What a placement left behind: the frame it asked for and the one the
+/// window was read back at once the placement was accepted.
+struct WindowLayoutSettledFrame: Equatable {
+    var requested: WindowLayoutFrame
+    var actual: WindowLayoutFrame
 }
 
 struct WindowLayoutWindowKey: Hashable {
