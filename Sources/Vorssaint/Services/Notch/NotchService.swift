@@ -20,11 +20,14 @@ struct NotchNotice: Equatable {
         let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
         let leading = ((level == nil ? title : detail) as NSString).size(withAttributes: [.font: font]).width
         let trailing = level == nil ? (detail as NSString).size(withAttributes: [.font: font]).width : 0
-        if level != nil, event != .accessory { return 112 }
-        // Only the outer edge needs padding. Long accessory names truncate
-        // instead of making both wings as wide as the full name.
+        // Reserve enough for the widest percentage without giving the short
+        // label the same oversized wing used by text notices.
+        if level != nil, event != .accessory { return 80 }
+        // Battery labels need breathing room at both the curved edge and the
+        // camera. Long accessory names still use bounded truncation.
         let maximum: CGFloat = event == .accessory && level == nil ? 160 : 240
-        return min(maximum, max(88, ceil(max(leading + 18 + 8, trailing)) + 16))
+        let padding: CGFloat = event == .battery ? 32 : 16
+        return min(maximum, max(88, ceil(max(leading + 18 + 8, trailing)) + padding))
     }
 
     var accessibilityText: String {
@@ -1596,6 +1599,7 @@ final class NotchService: ObservableObject {
         let clicks: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
         if let token = NSEvent.addGlobalMonitorForEvents(matching: clicks, handler: { [weak self] _ in
             guard let self, !self.keepsWorkingSurface,
+                  self.windowHost?.contains(NSEvent.mouseLocation) != true,
                   (NSApp.delegate as? AppDelegate)?.isOverStatusItem(NSEvent.mouseLocation) != true,
                   !AssistiveKeyboard.ownsCocoaPoint(NSEvent.mouseLocation) else { return }
             self.collapse()
@@ -1645,6 +1649,7 @@ final class NotchService: ObservableObject {
             }
             if clicks.contains(NSEvent.EventTypeMask(rawValue: 1 << event.type.rawValue)),
                event.window !== self.panel, !self.keepsWorkingSurface,
+               self.windowHost?.contains(NSEvent.mouseLocation) != true,
                (NSApp.delegate as? AppDelegate)?.isOverStatusItem(NSEvent.mouseLocation) != true,
                !AssistiveKeyboard.ownsCocoaPoint(NSEvent.mouseLocation) { self.collapse() }
             return event
@@ -1850,9 +1855,7 @@ final class NotchService: ObservableObject {
     }
 
     private func showVolume(_ volume: Double, muted: Bool?) {
-        // The open panel already shows the adjustment. Do not retain a notice
-        // behind it that would appear only after the pointer leaves.
-        guard volume.isFinite, !expanded else { return }
+        guard volume.isFinite else { return }
         let value = muted == true ? 0 : min(1, max(0, volume))
         show(NotchNotice(event: .volume, title: FeatureStrings.notch(L10n.shared.language).volume,
                          detail: "\(Int((value * 100).rounded()))%",

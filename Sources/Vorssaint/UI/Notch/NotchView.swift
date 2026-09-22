@@ -22,6 +22,9 @@ struct NotchView: View {
             .frame(width: service.surfaceSize.width, height: service.surfaceSize.height, alignment: .top)
             .foregroundStyle(.white)
             .contentShape(shape)
+            // The backdrop is a separate, non-interactive hosting view. Claim
+            // empty space here so clicks and wheel events stay in this window.
+            .onTapGesture { }
             .onChange(of: reduceTransparency) {
                 DispatchQueue.main.async { service.refreshPresentation(animated: false) }
             }
@@ -184,6 +187,7 @@ struct NotchView: View {
                             .frame(height: contentOverflows ? pageSize.height : nil)
                             .frame(maxWidth: .infinity, alignment: .topLeading)
                             .padding(.bottom, 4)
+                            .contentShape(Rectangle())
                     }
                     .scrollIndicators(.automatic)
                 } else {
@@ -251,6 +255,12 @@ struct NotchView: View {
             || (service.selected == .tools && launcher.isEditing && launcher.activeUtility == nil)
     }
 
+    private var headerFeedback: NotchNotice? {
+        guard let notice = service.notice, notice.level != nil,
+              [.volume, .brightness, .keyboardLight].contains(notice.event) else { return nil }
+        return notice
+    }
+
     private var header: some View {
         HStack(spacing: service.expandedGeometry.headerCameraGap > 0 ? 0 : 6) {
             let quickActions = NotchQuickAccessConfiguration.current().actions
@@ -286,6 +296,13 @@ struct NotchView: View {
             }
             .frame(width: service.expandedGeometry.headerCameraGap > 0 ? (service.contentSize.width - service.expandedGeometry.headerCameraGap) / 2 : nil)
             .frame(maxWidth: .infinity, alignment: .leading)
+            // Keep search mounted so a media key never discards its focus.
+            .opacity(headerFeedback == nil ? 1 : 0)
+            .allowsHitTesting(headerFeedback == nil)
+            .accessibilityHidden(headerFeedback != nil)
+            .overlay(alignment: .leading) {
+                if let notice = headerFeedback { NotchExpandedLevelView(notice: notice) }
+            }
             .clipped()
             if service.expandedGeometry.headerCameraGap > 0 {
                 Color.clear.frame(width: service.expandedGeometry.headerCameraGap)
