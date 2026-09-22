@@ -536,8 +536,15 @@ final class WindowLayoutService: ObservableObject {
         let timer = Timer(timeInterval: 0.3, repeats: false) { [weak self] _ in
             guard let self else { return }
             self.settleTimers[windowID] = nil
+            // The user may have resized or dragged the window by hand in
+            // the meantime; the lenient acceptance alone would record that
+            // as settled and let the next side action cycle from it. Only a
+            // frame that moved toward the request counts as the late commit.
             guard let settled = self.settledFrames[windowKey],
                   let actual = self.frame(of: window),
+                  WindowLayoutGeometry.settledFrameRefreshAccepts(actual: actual,
+                                                                  settled: settled,
+                                                                  tolerance: self.frameTolerance),
                   actual.isClose(to: settled.requested, tolerance: self.frameTolerance)
                     || self.accepted(actual: actual, targetRect: targetRect, action: action)
             else { return }

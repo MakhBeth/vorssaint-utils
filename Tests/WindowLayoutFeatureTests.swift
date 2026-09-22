@@ -807,6 +807,26 @@ enum WindowLayoutFeatureTests {
                 && WindowLayoutGeometry.sideCycleContinues(current: settledHalf, settled: lateTwoThirds, tolerance: 4)
                 && WindowLayoutGeometry.sideCycleContinues(current: widenedHalf, settled: lateTwoThirds, tolerance: 4) == false,
                "window layout side cycle survives an app that commits the two thirds after it was read back at the half")
+        let lateReadAtOldFrame = WindowLayoutSettledFrame(
+            requested: settledHalf,
+            actual: WindowLayoutFrame(origin: CGPoint(x: 300, y: 200), size: CGSize(width: 1200, height: 800)))
+        let clampedByApp = WindowLayoutSettledFrame(requested: settledHalf, actual: clampedHalf)
+        let movedClampedHalf = WindowLayoutFrame(origin: CGPoint(x: 20, y: 40), size: CGSize(width: 900, height: 860))
+        let driftedClampedHalf = WindowLayoutFrame(origin: settledHalf.origin, size: CGSize(width: 904, height: 862))
+        let refreshSource = sideRepeatServiceSource.components(separatedBy: "private func scheduleSettledFrameRefresh(")
+            .dropFirst().first?.components(separatedBy: "private func scheduleSettle(").first ?? ""
+        suite.expect(refreshSource.contains("WindowLayoutGeometry.settledFrameRefreshAccepts(")
+                && refreshSource.contains("self.accepted(actual: actual"),
+               "window layout settled frame refresh keeps a change by hand from becoming the settled frame")
+        suite.expect(WindowLayoutGeometry.settledFrameRefreshAccepts(actual: clampedHalf, settled: lateReadAtOldFrame, tolerance: 4)
+                && WindowLayoutGeometry.settledFrameRefreshAccepts(actual: settledHalf, settled: lateReadAtOldFrame, tolerance: 4),
+               "window layout settled frame refresh records a late commit, clamped by the app or landed exactly")
+        suite.expect(WindowLayoutGeometry.settledFrameRefreshAccepts(actual: widenedHalf, settled: clampedByApp, tolerance: 4) == false
+                && WindowLayoutGeometry.settledFrameRefreshAccepts(actual: movedClampedHalf, settled: clampedByApp, tolerance: 4) == false,
+               "window layout settled frame refresh rejects a clamped half widened or moved by hand before it ran")
+        suite.expect(WindowLayoutGeometry.settledFrameRefreshAccepts(actual: driftedClampedHalf, settled: clampedByApp, tolerance: 4)
+                && WindowLayoutGeometry.settledFrameRefreshAccepts(actual: clampedHalf, settled: clampedByApp, tolerance: 4),
+               "window layout settled frame refresh tolerates a clamped half that only drifted within tolerance")
         let leftHalfRect = WindowLayoutGeometry.rect(for: .leftHalf, current: currentWindow, visibleFrame: visibleFrame)
         suite.expect(WindowLayoutGeometry.accepts(actualRect: leftHalfRect.offsetBy(dx: 200, dy: 0),
                                             targetRect: leftHalfRect,

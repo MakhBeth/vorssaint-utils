@@ -333,6 +333,26 @@ enum WindowLayoutGeometry {
             || current.isClose(to: settled.requested, tolerance: tolerance)
     }
 
+    /// Whether a frame read back after the placement was accepted is the app
+    /// committing that placement late rather than a change by hand: every
+    /// edge sits at least as close to the requested frame as the earlier read
+    /// did, within tolerance. A clamped resize that lands moves toward the
+    /// request; a window widened or dragged in the meantime moves away.
+    static func settledFrameRefreshAccepts(actual: WindowLayoutFrame,
+                                           settled: WindowLayoutSettledFrame,
+                                           tolerance: CGFloat) -> Bool {
+        if actual.isClose(to: settled.requested, tolerance: tolerance) { return true }
+        func approaches(_ read: CGFloat, _ earlier: CGFloat, _ requested: CGFloat) -> Bool {
+            abs(read - requested) <= abs(earlier - requested) + tolerance
+        }
+        let requested = settled.requested
+        let earlier = settled.actual
+        return approaches(actual.origin.x, earlier.origin.x, requested.origin.x)
+            && approaches(actual.origin.y, earlier.origin.y, requested.origin.y)
+            && approaches(actual.size.width, earlier.size.width, requested.size.width)
+            && approaches(actual.size.height, earlier.size.height, requested.size.height)
+    }
+
     /// Where a repeated side action goes: asking for the same side again keeps
     /// pushing that way, so the window leaves through that edge and lands
     /// against the opposite one on the display beside it. Top and bottom keep
