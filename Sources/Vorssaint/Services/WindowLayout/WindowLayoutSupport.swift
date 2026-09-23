@@ -386,6 +386,24 @@ enum WindowLayoutGeometry {
         return cycle[(index + 1) % cycle.count]
     }
 
+    /// The key a placement records for the size cycle: only a left or right
+    /// half pressed while the cycle is on. Every other placement records none,
+    /// so a two thirds shortcut or a pointer snap is never read back for the
+    /// cycle and the next side press starts again at the half.
+    static func sideCyclePress(for action: WindowLayoutAction,
+                               cyclesThirds: Bool) -> WindowLayoutAction? {
+        guard cyclesThirds, action == .leftHalf || action == .rightHalf else { return nil }
+        return action
+    }
+
+    /// Whether the previous placement was asked for with the same side key,
+    /// the only case in which repeating that key carries on the cycle.
+    static func sideCycleResumes(pressing action: WindowLayoutAction,
+                                 settled: WindowLayoutSettledFrame?) -> Bool {
+        guard let pressed = settled?.pressedAction else { return false }
+        return pressed == action
+    }
+
     /// Whether the size cycle may advance: only from a window still sitting
     /// where the previous step left it, either the frame it was read back at
     /// (an app's minimum size included, so a clamped half still cycles) or the
@@ -1016,11 +1034,14 @@ struct WindowLayoutFrame: Equatable {
     }
 }
 
-/// What a placement left behind: the frame it asked for and the one the
-/// window was read back at once the placement was accepted.
+/// What a placement left behind: the frame it asked for, the one the
+/// window was read back at once the placement was accepted, and the side
+/// key that was pressed for it, so the size cycle follows the last key rather
+/// than the last placement.
 struct WindowLayoutSettledFrame: Equatable {
     var requested: WindowLayoutFrame
     var actual: WindowLayoutFrame
+    var pressedAction: WindowLayoutAction? = nil
 }
 
 struct WindowLayoutWindowKey: Hashable {

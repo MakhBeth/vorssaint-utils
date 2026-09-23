@@ -1059,6 +1059,48 @@ enum WindowLayoutFeatureTests {
         suite.expect(WindowLayoutGeometry.settledFrameRefreshAccepts(actual: driftedClampedHalf, settled: clampedByApp, tolerance: 4)
                 && WindowLayoutGeometry.settledFrameRefreshAccepts(actual: clampedHalf, settled: clampedByApp, tolerance: 4),
                "window layout settled frame refresh tolerates a clamped half that only drifted within tolerance")
+        suite.expect(WindowLayoutGeometry.sideCyclePress(for: .leftHalf, cyclesThirds: true) == .leftHalf
+                && WindowLayoutGeometry.sideCyclePress(for: .rightHalf, cyclesThirds: true) == .rightHalf
+                && WindowLayoutGeometry.sideCyclePress(for: .leftHalf, cyclesThirds: false) == nil
+                && WindowLayoutGeometry.sideCyclePress(for: .leftTwoThirds, cyclesThirds: true) == nil
+                && WindowLayoutGeometry.sideCyclePress(for: .topHalf, cyclesThirds: true) == nil,
+               "window layout records a side key for the cycle only for left or right halves while the cycle is on")
+        let pressedLeft = WindowLayoutSettledFrame(requested: settledHalf, actual: settledHalf, pressedAction: .leftHalf)
+        suite.expect(WindowLayoutGeometry.sideCycleResumes(pressing: .leftHalf, settled: pressedLeft)
+                && WindowLayoutGeometry.sideCycleResumes(pressing: .rightHalf, settled: pressedLeft) == false
+                && WindowLayoutGeometry.sideCycleResumes(pressing: .leftHalf, settled: landedHalf) == false
+                && WindowLayoutGeometry.sideCycleResumes(pressing: .leftHalf, settled: nil) == false,
+               "window layout side cycle resumes only after the same side key")
+        for (side, twoThirds) in [(WindowLayoutAction.leftHalf, WindowLayoutAction.leftTwoThirds),
+                                  (.rightHalf, .rightTwoThirds)] {
+            // The two thirds shortcut records no side key, so the next side
+            // press finds nothing to resume from and places the half.
+            let afterTwoThirdsShortcut = WindowLayoutGeometry.sideCyclePress(for: twoThirds, cyclesThirds: true).map {
+                WindowLayoutSettledFrame(requested: settledTwoThirds, actual: settledTwoThirds, pressedAction: $0)
+            }
+            let resumes = WindowLayoutGeometry.sideCycleResumes(pressing: side, settled: afterTwoThirdsShortcut)
+                && WindowLayoutGeometry.sideCycleContinues(current: settledTwoThirds,
+                                                           settled: afterTwoThirdsShortcut,
+                                                           tolerance: 4)
+            suite.expect(resumes == false
+                    && WindowLayoutGeometry.effectiveAction(for: side,
+                                                            current: currentWindow,
+                                                            visibleFrame: visibleFrame,
+                                                            previousAction: twoThirds,
+                                                            sideRepeatCyclesThirds: resumes) == side,
+                   "window layout \(side.rawValue) after the two thirds shortcut places the half with the cycle on")
+        }
+        let sideRepeatSetFrame = sideRepeatServiceSource.components(separatedBy: "cyclePress: WindowLayoutAction? = nil) -> Bool {")
+            .dropFirst().first?.components(separatedBy: "scheduleSettle(SettleContext(").first ?? ""
+        let sideRepeatConclude = sideRepeatServiceSource.components(separatedBy: "private func concludeSettle(")
+            .dropFirst().first?.components(separatedBy: "return\n").first ?? ""
+        suite.expect(sideRepeatPlacement.contains("WindowLayoutGeometry.sideCycleResumes(")
+                && sideRepeatPlacement.contains("WindowLayoutGeometry.sideCyclePress("),
+               "window layout service continues the side cycle only after the same side key")
+        suite.expect(sideRepeatSetFrame.components(separatedBy: "if let cyclePress").count == 2
+                && sideRepeatSetFrame.components(separatedBy: "if let cyclePress")[0].contains("self.frame(of: window) ?? frame") == false
+                && sideRepeatConclude.contains("if let cyclePress = context.cyclePress"),
+               "window layout service reads back the settled frame and schedules its refresh only while the cycle is on")
         let leftHalfRect = WindowLayoutGeometry.rect(for: .leftHalf, current: currentWindow, visibleFrame: visibleFrame)
         suite.expect(WindowLayoutGeometry.accepts(actualRect: leftHalfRect.offsetBy(dx: 200, dy: 0),
                                             targetRect: leftHalfRect,

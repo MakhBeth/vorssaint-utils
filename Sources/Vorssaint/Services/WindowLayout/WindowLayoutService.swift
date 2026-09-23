@@ -288,11 +288,16 @@ final class WindowLayoutService: ObservableObject {
                                 sideRepeatCyclesThirds: Bool = false) -> WindowLayoutResult {
         let currentRect = appKitFrame(fromAX: target.frame)
         let previousAction = cyclesRepeatedAction ? lastActions[target.key] : nil
-        // The size cycle only advances from a window still sitting where the
-        // last step left it: a window dragged or resized by hand in between
-        // starts over at the half.
-        let cyclesSides = sideRepeatCyclesThirds
+        let cyclePress = WindowLayoutGeometry.sideCyclePress(for: action,
+                                                             cyclesThirds: sideRepeatCyclesThirds)
+        // The size cycle only advances when the previous placement came from
+        // the same side key and the window still sits where that step left
+        // it: another shortcut, or a window dragged or resized by hand in
+        // between, starts over at the half.
+        let cyclesSides = cyclePress != nil
             && previousAction != nil
+            && WindowLayoutGeometry.sideCycleResumes(pressing: action,
+                                                     settled: settledFrames[target.key])
             && WindowLayoutGeometry.sideCycleContinues(current: target.frame,
                                                        settled: settledFrames[target.key],
                                                        tolerance: frameTolerance)
@@ -306,7 +311,13 @@ final class WindowLayoutService: ObservableObject {
                                   visibleFrame: visibleFrame)
         if placement.frame == target.frame {
             lastActions[target.key] = effectiveAction
-            settledFrames[target.key] = WindowLayoutSettledFrame(requested: target.frame, actual: target.frame)
+            if let cyclePress {
+                settledFrames[target.key] = WindowLayoutSettledFrame(requested: target.frame,
+                                                                     actual: target.frame,
+                                                                     pressedAction: cyclePress)
+            } else {
+                settledFrames.removeValue(forKey: target.key)
+            }
             return finish(.success(restored: false))
         }
         frameHistory.record(historyFrame ?? target.frame, for: target.key)
@@ -315,7 +326,8 @@ final class WindowLayoutService: ObservableObject {
                     screenVisibleFrame: visibleFrame,
                     action: effectiveAction,
                     on: target.window,
-                    windowKey: target.key) {
+                    windowKey: target.key,
+                    cyclePress: cyclePress) {
             lastActions[target.key] = effectiveAction
             return finish(.success(restored: false))
         }
@@ -480,7 +492,8 @@ final class WindowLayoutService: ObservableObject {
                           screenVisibleFrame: NSRect,
                           action: WindowLayoutAction,
                           on window: AXUIElement,
-                          windowKey: WindowLayoutWindowKey) -> Bool {
+                          windowKey: WindowLayoutWindowKey,
+                          cyclePress: WindowLayoutAction? = nil) -> Bool {
         let windowID = windowKey.windowID
         cancelSettle(for: windowID)
         assistiveModeSuspensions.removeValue(forKey: windowID)?.resume()
@@ -490,16 +503,22 @@ final class WindowLayoutService: ObservableObject {
         settledFrames.removeValue(forKey: windowKey)
         if attempt(frame, targetRect: targetRect, action: action, on: window) {
             assistiveModeSuspensions.removeValue(forKey: windowID)?.resume()
-            let actual = self.frame(of: window) ?? frame
-            settledFrames[windowKey] = WindowLayoutSettledFrame(requested: frame, actual: actual)
-            if !actual.isClose(to: frame, tolerance: frameTolerance) {
-                // The lenient acceptance may have read a frame the app has not
-                // committed yet (issue #334); look again once it has, so a
-                // late, clamped resize still counts as the settled frame.
-                scheduleSettledFrameRefresh(for: window,
-                                            windowKey: windowKey,
-                                            targetRect: targetRect,
-                                            action: action)
+            // Only the side size cycle uses the settled frame, so the read-back
+            // and its later refresh run only for a press that may cycle.
+            if let cyclePress {
+                let actual = self.frame(of: window) ?? frame
+                settledFrames[windowKey] = WindowLayoutSettledFrame(requested: frame,
+                                                                    actual: actual,
+                                                                    pressedAction: cyclePress)
+                if !actual.isClose(to: frame, tolerance: frameTolerance) {
+                    // The lenient acceptance may have read a frame the app has
+                    // not committed yet (issue #334); look again once it has,
+                    // so a late, clamped resize still counts as the settled frame.
+                    scheduleSettledFrameRefresh(for: window,
+                                                windowKey: windowKey,
+                                                targetRect: targetRect,
+                                                action: action)
+                }
             }
             return true
         }
@@ -516,6 +535,7 @@ final class WindowLayoutService: ObservableObject {
                                      action: action,
                                      original: original,
                                      previousAction: lastActions[windowKey],
+                                     cyclePress: cyclePress,
                                      windowKey: windowKey,
                                      resultGeneration: resultGeneration + 1),
                        attempt: 0)
@@ -546,7 +566,9 @@ final class WindowLayoutService: ObservableObject {
                   actual.isClose(to: settled.requested, tolerance: self.frameTolerance)
                     || self.accepted(actual: actual, targetRect: targetRect, action: action)
             else { return }
-            self.settledFrames[windowKey] = WindowLayoutSettledFrame(requested: settled.requested, actual: actual)
+            self.settledFrames[windowKey] = WindowLayoutSettledFrame(requested: settled.requested,
+                                                                     actual: actual,
+                                                                     pressedAction: settled.pressedAction)
         }
         settleTimers[windowID] = timer
         RunLoop.main.add(timer, forMode: .common)
@@ -609,8 +631,11 @@ final class WindowLayoutService: ObservableObject {
     private func concludeSettle(_ context: SettleContext, success: Bool) {
         assistiveModeSuspensions.removeValue(forKey: context.windowID)?.resume()
         if success {
-            settledFrames[context.windowKey] = WindowLayoutSettledFrame(requested: context.frame,
-                                                                        actual: frame(of: context.window) ?? context.frame)
+            if let cyclePress = context.cyclePress {
+                settledFrames[context.windowKey] = WindowLayoutSettledFrame(requested: context.frame,
+                                                                            actual: frame(of: context.window) ?? context.frame,
+                                                                            pressedAction: cyclePress)
+            }
             return
         }
         settledFrames.removeValue(forKey: context.windowKey)
@@ -2405,6 +2430,9 @@ private struct SettleContext {
     let action: WindowLayoutAction
     let original: WindowLayoutFrame?
     let previousAction: WindowLayoutAction?
+    /// The side key recorded for the size cycle, nil when the placement
+    /// cannot cycle and so needs no read-back once it settles.
+    let cyclePress: WindowLayoutAction?
     let windowKey: WindowLayoutWindowKey
     /// Which published result this settle belongs to; a late failure only
     /// speaks when no newer action has published since.
