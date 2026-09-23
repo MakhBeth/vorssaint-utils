@@ -21,6 +21,12 @@ struct NotchView: View {
         surface
             .frame(width: service.surfaceSize.width, height: service.surfaceSize.height, alignment: .top)
             .foregroundStyle(.white)
+            // The window server leaves Liquid Glass out of its hit test, so a
+            // click or a wheel over empty glass would reach the window behind:
+            // the page stops scrolling between cards and the island loses
+            // focus. A fill too faint to see keeps the surface in this window,
+            // as the black backdrop does.
+            .background(shape.fill(Color.black.opacity(0.01)))
             .contentShape(shape)
             // The backdrop is a separate, non-interactive hosting view. Claim
             // empty space here so clicks and wheel events stay in this window.
@@ -117,6 +123,7 @@ struct NotchView: View {
             switch activity {
             case .timer: NotchTimerStrip(service: service)
             case .downloads: NotchDownloadStrip(service: service)
+            case .agents: NotchAgentStrip(service: service)
             case .music: NotchMusicStrip(service: service)
             }
         } else {
@@ -145,6 +152,9 @@ struct NotchView: View {
                     case .battery:
                         Image(systemName: "battery.100percent").font(.system(size: 12))
                             .padding(.leading, restingBatteryInset)
+                    case .agents:
+                        NotchAgentRestingWing(leading: true)
+                            .padding(.leading, restingBatteryInset)
                     case .none: EmptyView()
                     }
                 }.frame(width: service.geometry.restingWingWidth, alignment: .trailing)
@@ -162,6 +172,9 @@ struct NotchView: View {
                                 .lineLimit(1)
                                 .padding(.trailing, restingBatteryInset)
                         }
+                    case .agents:
+                        NotchAgentRestingWing(leading: false)
+                            .padding(.trailing, restingBatteryInset)
                     case .none: EmptyView()
                     }
                 }.frame(width: service.geometry.restingWingWidth, alignment: .leading)
@@ -195,7 +208,8 @@ struct NotchView: View {
                 }
             }
             .frame(width: service.contentSize.width, height: service.contentSize.height, alignment: .top)
-            .clipped()
+            .clipShape(NotchPageClip(top: service.expandedGeometry.headerTopInset
+                                        + service.expandedGeometry.headerRowHeight + NotchLayout.spacing))
         }
         .padding(.horizontal, NotchLayout.horizontalInset)
         .padding(.top, service.expandedGeometry.headerTopInset)
@@ -471,6 +485,7 @@ struct NotchView: View {
                 NotchSystemView(size: pageSize) { service.showMetric($0) }
             case .tools: QuickLauncherView(notchSize: pageSize)
             case .scratchpad: NotchScratchpadView(service: service)
+            case .agents: NotchAgentsView(size: pageSize)
             }
         }
     }
@@ -539,6 +554,21 @@ extension NotchModule: PanelOrderItem {
         case .system: return FeatureStrings.notch(language).system
         case .tools: return FeatureStrings.notch(language).tools
         case .scratchpad: return FeatureStrings.scratchpad(language).pageTitle
+        case .agents: return FeatureStrings.notchAgents(language).title
         }
+    }
+}
+
+/// A page may draw into the island's own margins and behind its header, which
+/// the silhouette already bounds: the artwork's halo and hover growth fade out
+/// there instead of ending at a hard edge. The header stays above the page.
+private struct NotchPageClip: Shape {
+    /// From the top of the page to the top of the island.
+    let top: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        Path(CGRect(x: rect.minX - NotchLayout.horizontalInset, y: rect.minY - top,
+                    width: rect.width + NotchLayout.horizontalInset * 2,
+                    height: rect.height + top + NotchLayout.bottomInset))
     }
 }

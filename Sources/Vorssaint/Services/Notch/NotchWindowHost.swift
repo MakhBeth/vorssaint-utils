@@ -59,9 +59,10 @@ final class NotchWindowHost: NSObject, CAAnimationDelegate {
         panel.isReleasedWhenClosed = false
         panel.animationBehavior = .none
         panel.level = NotchPanel.normalLevel
-        // Transient overlays float across Spaces. Stationary windows follow
-        // the desktop's transition; the two behaviors are mutually exclusive.
-        // AppKit hides a transient overlay while Mission Control is open.
+        // Stationary keeps the island in place when the desktop is revealed,
+        // where files are dragged onto it; a transient overlay is swept away
+        // with the windows. The two behaviors are mutually exclusive, and the
+        // stationary one also slides with the desktop between Spaces.
         panel.collectionBehavior = NotchPanel.overlayCollectionBehavior
         panel.contentView = quickAccessContainer ?? canvas
         canvas.layoutSubtreeIfNeeded()
@@ -116,7 +117,10 @@ final class NotchWindowHost: NSObject, CAAnimationDelegate {
         let changesFrame = revealing || (hideWhenSettled && !canAnimate) || size != targetSize
             || frame != previousFrame || (!isAnimating && panel.frame != appliedFrame)
         targetUsesGlass = usesGlass
-        canvas.setUsesGlass(usesGlass || (canAnimate && (changesFrame || isAnimating) && canvas.usesGlass))
+        // A shape still moving keeps its glass until it settles, even when an
+        // unanimated refresh lands meanwhile: a click in Settings closes the
+        // island and the option it changes syncs preferences mid-close.
+        canvas.setUsesGlass(usesGlass || (((canAnimate && changesFrame) || isAnimating) && canvas.usesGlass))
         guard changesFrame || transitionContent != .none else {
             currentGeometry = geometry
             configureQuickAccess()
@@ -490,7 +494,7 @@ private final class NotchFrameProbe {
 
 final class NotchPanel: NSPanel {
     static let overlayCollectionBehavior: NSWindow.CollectionBehavior = [
-        .canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle
+        .canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle
     ]
     // Status items own the screen edge at their level, even when our view's
     // hit test includes it. Keep the island above them, below native menus.
@@ -499,6 +503,13 @@ final class NotchPanel: NSPanel {
     var handleScroll: ((NSEvent) -> Bool)?
     override var canBecomeKey: Bool { acceptsKeyFocus }
     override var canBecomeMain: Bool { false }
+    // Liquid Glass swaps to a flat, blurred stand-in in a window that looks
+    // inactive, and a non-activating panel only looks active while it holds
+    // key focus: an island opened by hover stayed dull until clicked. Like
+    // the menu bar it hangs from, the island always looks active, without
+    // taking the keyboard from the app in front. AppKit's own glass windows
+    // answer this private question the same way.
+    @objc func _hasActiveAppearanceIgnoringKeyFocus() -> Bool { true }
     // AppKit describes a non-activating panel as a system dialog, which tiling
     // window managers then track and list on whichever space is current; the
     // borderless overlays they leave alone are undescribed windows.
