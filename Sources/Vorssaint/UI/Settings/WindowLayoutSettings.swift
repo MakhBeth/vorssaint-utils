@@ -313,7 +313,6 @@ struct WindowLayoutSettings: View {
             ForEach(Self.halfActions) { action in
                 actionRow(action)
             }
-            Divider()
             Toggle(text.sideRepeatCycle, isOn: $sideRepeatCyclesThirds)
             Text(text.sideRepeatCycleCaption)
                 .font(.caption)
